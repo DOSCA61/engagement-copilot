@@ -426,7 +426,7 @@ ul.pain{margin:4px 0 0 16px}
 'use strict';
 
 /* ================= Version ================= */
-const APP_VERSION = '1.7.0';   // bump this on every change — shows in the header
+const APP_VERSION = '1.7.1';   // bump this on every change — shows in the header
 document.getElementById('verTag').textContent = 'v' + APP_VERSION;
 document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
 console.log('Engagement Copilot front-end v' + APP_VERSION);
@@ -844,6 +844,8 @@ function loadIntoUI(sess){
     else addMsg('assistant', parseReply(m.content).reply || m.content);
   });
   selectedNode=null; closeDrawer(); renderPhases(); renderMap(); renderPillars();
+  const resume = `**Session resumed** — ${S.nodes.length} process step(s) mapped, ${S.opportunities.length} opportunit${S.opportunities.length===1?'y':'ies'}, ${S.compliance.length} compliance flag(s). Phase: ${S.phase}.\nThe map is live — keep describing processes and it extends where we left off. Ask "recap where we left off" for a full briefing.`;
+  addMsg('assistant', resume);
   document.getElementById('zoomFit').click();
   setSaveState('loaded');
 }
@@ -1310,6 +1312,7 @@ inputEl.addEventListener('input', autosize);
 
 /* Starter prompts */
 const STARTERS = [
+  'Recap where we left off and what to probe next',
   'Walk me through your day-to-day discovery questions',
   'The client just described a process — map it',
   'What should I quantify before recommending anything?',
