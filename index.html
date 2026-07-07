@@ -281,6 +281,12 @@ ul.pain{margin:4px 0 0 16px}
         <input id="cfgModel" type="text" placeholder="Leave blank for backend default">
       </div>
       <div class="field">
+        <label for="cfgVoice">Voice for spoken replies</label>
+        <select id="cfgVoice" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:14px;background:var(--paper)"></select>
+        <div class="hint">Voices come from your browser. In Edge the "Natural" voices are the best quality; in Chrome pick a "Google" voice. The list differs per device, so set this once on the laptop you'll use on-site.</div>
+        <button class="mbtn" id="voicePreview" style="margin-top:8px">▶ Preview voice</button>
+      </div>
+      <div class="field">
         <button class="mbtn" id="testBackend">Test connection</button>
         <span class="mono" id="testResult" style="font-size:12px;margin-left:8px"></span>
       </div>
@@ -333,7 +339,7 @@ ul.pain{margin:4px 0 0 16px}
 'use strict';
 
 /* ================= Version ================= */
-const APP_VERSION = '1.2.0';   // bump this on every change — shows in the header
+const APP_VERSION = '1.3.1';   // bump this on every change — shows in the header
 document.getElementById('verTag').textContent = 'v' + APP_VERSION;
 document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
 console.log('Engagement Copilot front-end v' + APP_VERSION);
@@ -841,7 +847,18 @@ document.getElementById('cfgSave').onclick = ()=>{
   cfg.url = document.getElementById('cfgUrl').value.trim();
   cfg.model = document.getElementById('cfgModel').value.trim();
   store.set('ec_backend', cfg.url); store.set('ec_model', cfg.model);
+  store.set('ec_voiceName', document.getElementById('cfgVoice').value);
   closeModal('configModal'); toast('Config saved');
+};
+document.getElementById('voicePreview').onclick = ()=>{
+  if(!('speechSynthesis' in window)){ toast('No speech support in this browser'); return; }
+  const name = document.getElementById('cfgVoice').value;
+  const v = voices.find(x=>x.name===name) || pickVoice();
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance("Right — let's walk through the invoice approval process. Who touches it first?");
+  if(v){ u.voice = v; u.lang = v.lang; }
+  u.rate = 1.02;
+  speechSynthesis.speak(u);
 };
 document.getElementById('testBackend').onclick = async ()=>{
   const el = document.getElementById('testResult');
@@ -866,6 +883,46 @@ function refreshVoiceBtn(){
   voiceBtn.classList.toggle('on', voiceOn);
   voiceBtn.title = voiceOn ? 'Spoken replies: on' : 'Spoken replies: off';
 }
+
+/* Voice selection */
+let voices = [];
+function loadVoices(){
+  if(!('speechSynthesis' in window)) return;
+  voices = speechSynthesis.getVoices();
+  const sel = document.getElementById('cfgVoice');
+  if(!sel) return;
+  const saved = store.get('ec_voiceName') || '';
+  // English voices first, best-quality flavours to the top
+  const rank = v => {
+    let r = 0;
+    if(/en(-|_)/i.test(v.lang)) r -= 100;
+    if(/natural|neural/i.test(v.name)) r -= 50;
+    if(/google/i.test(v.name)) r -= 30;
+    if(/ie|irish/i.test(v.lang + v.name)) r -= 10;
+    return r;
+  };
+  const sorted = [...voices].sort((a,b)=>rank(a)-rank(b) || a.name.localeCompare(b.name));
+  sel.innerHTML = '<option value="">Automatic (best guess)</option>' +
+    sorted.map(v=>`<option value="${esc(v.name)}"${v.name===saved?' selected':''}>${esc(v.name)} — ${esc(v.lang)}</option>`).join('');
+}
+if('speechSynthesis' in window){
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function pickVoice(){
+  const saved = store.get('ec_voiceName');
+  if(saved){
+    const v = voices.find(x=>x.name===saved);
+    if(v) return v;
+  }
+  // best available fallback
+  return voices.find(v=>/en/i.test(v.lang) && /natural|neural/i.test(v.name))
+      || voices.find(v=>/en/i.test(v.lang) && /google/i.test(v.name))
+      || voices.find(v=>/en(-|_)?(ie|gb)/i.test(v.lang))
+      || voices.find(v=>/en/i.test(v.lang))
+      || null;
+}
 voiceBtn.onclick = ()=>{
   voiceOn = !voiceOn;
   store.set('ec_voice', voiceOn ? '1' : '0');
@@ -882,7 +939,9 @@ function speak(text){
   if(wasListening) stopRec();               // don't transcribe our own voice
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(clean);
-  u.lang = 'en-IE'; u.rate = 1.02;
+  const v = pickVoice();
+  if(v){ u.voice = v; u.lang = v.lang; } else { u.lang = 'en-IE'; }
+  u.rate = 1.02;
   u.onend = ()=>{ if(wasListening) startRec(); };
   speechSynthesis.speak(u);
 }
@@ -893,13 +952,17 @@ if(SR){
   rec.continuous = true;
   rec.interimResults = true;
   rec.onresult = (ev)=>{
-    let finalTxt = '', interim = '';
-    for(let i=0;i<ev.results.length;i++){
+    let interim = '';
+    // Only process NEW results (from resultIndex) — reprocessing old ones duplicates words
+    for(let i=ev.resultIndex; i<ev.results.length; i++){
       const r = ev.results[i];
-      if(r.isFinal) finalTxt += r[0].transcript;
-      else interim += r[0].transcript;
+      if(r.isFinal){
+        recBase = (recBase + ' ' + r[0].transcript).replace(/\s+/g,' ').trim(); // commit immediately
+      }else{
+        interim += r[0].transcript;
+      }
     }
-    inputEl.value = (recBase + ' ' + finalTxt + ' ' + interim).replace(/\s+/g,' ').trimStart();
+    inputEl.value = (recBase + (interim ? ' ' + interim : '')).replace(/\s+/g,' ').trimStart();
     autosize();
   };
   rec.onerror = (e)=>{
