@@ -203,6 +203,7 @@ ul.pain{margin:4px 0 0 16px}
   <div class="spacer"></div>
   <div class="save-state" id="saveState"></div>
   <button class="hbtn" id="sessionsBtn">Sessions</button>
+  <button class="hbtn" id="importAuditBtn">Import audit</button>
   <button class="hbtn" id="reportBtn">Report</button>
   <button class="hbtn" id="configBtn">Config</button>
   <button class="hbtn primary" id="newBtn">New engagement</button>
@@ -333,6 +334,28 @@ ul.pain{margin:4px 0 0 16px}
   </div>
 </div>
 
+<!-- Import audit modal -->
+<div class="overlay" id="auditModal">
+  <div class="modal">
+    <div class="mhead"><h2>Import AI Readiness Audit</h2></div>
+    <div class="mbody">
+      <p style="font-size:13.5px;line-height:1.5;margin-bottom:12px">Paste the Auditor's findings (or upload the exported file). The Copilot converts them into starter context — processes, pain points and candidate opportunities — all marked as <b>from audit, to be verified on-site</b>. Discovery then builds on the audit instead of repeating it.</p>
+      <div class="field">
+        <textarea id="auditText" rows="9" placeholder="Paste audit findings, scores, notes…" style="font-size:13px"></textarea>
+      </div>
+      <div class="field">
+        <button class="mbtn" id="auditFileBtn">Upload file (.txt / .md / .json / .csv)</button>
+        <input type="file" id="auditFile" accept=".txt,.md,.json,.csv" style="display:none">
+        <span class="mono" id="auditStatus" style="font-size:12px;margin-left:8px"></span>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn" data-close="auditModal">Cancel</button>
+      <button class="mbtn primary" id="auditImportBtn">Import &amp; analyse</button>
+    </div>
+  </div>
+</div>
+
 <!-- Report modal -->
 <div class="overlay" id="reportModal">
   <div class="modal">
@@ -358,7 +381,7 @@ ul.pain{margin:4px 0 0 16px}
 'use strict';
 
 /* ================= Version ================= */
-const APP_VERSION = '1.4.0';   // bump this on every change — shows in the header
+const APP_VERSION = '1.5.0';   // bump this on every change — shows in the header
 document.getElementById('verTag').textContent = 'v' + APP_VERSION;
 document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
 console.log('Engagement Copilot front-end v' + APP_VERSION);
@@ -388,7 +411,7 @@ let saveTimer = null;
 function blankSession(){
   return {
     sessionId:null, clientName:'', engagementTitle:'', phase:'discovery',
-    messages:[], nodes:[], edges:[], opportunities:[], compliance:[], useCases:[]
+    messages:[], nodes:[], edges:[], opportunities:[], compliance:[], useCases:[], audit:''
   };
 }
 
@@ -427,7 +450,7 @@ OUTPUT FORMAT — respond with ONE valid JSON object and NOTHING else (no markdo
 }
 All map/opportunity/compliance arrays are optional — include only what changed this turn. Opportunities and compliance entries with an existing id REPLACE the previous version. Never invent facts the user hasn't given you; ask instead.
 
-CURRENT STATE SNAPSHOT (do not re-add existing nodes):
+${S.audit ? 'AUDIT BACKGROUND (from a prior AI Readiness Audit — treat every claim as unverified until confirmed on-site; probe rather than assume):\n' + S.audit.slice(0,4000) + '\n\n' : ''}CURRENT STATE SNAPSHOT (do not re-add existing nodes):
 nodes: ${JSON.stringify(S.nodes.map(n=>({id:n.id,label:n.label})))}
 edges: ${JSON.stringify(S.edges)}
 opportunities: ${JSON.stringify(S.opportunities.map(o=>o.id))}
@@ -711,7 +734,7 @@ async function saveNow(){
   try{
     await api({ action:'saveSession', sessionId:S.sessionId, clientName:S.clientName,
       engagementTitle:S.engagementTitle, phase:S.phase,
-      data:{ messages:S.messages, nodes:S.nodes, edges:S.edges, opportunities:S.opportunities, compliance:S.compliance, useCases:S.useCases } });
+      data:{ messages:S.messages, nodes:S.nodes, edges:S.edges, opportunities:S.opportunities, compliance:S.compliance, useCases:S.useCases, audit:S.audit } });
     setSaveState('saved ' + new Date().toLocaleTimeString());
   }catch(e){ setSaveState('save failed'); toast('Save failed: '+e.message); }
 }
@@ -722,7 +745,7 @@ function loadIntoUI(sess){
     sessionId:sess.sessionId, clientName:sess.clientName, engagementTitle:sess.engagementTitle,
     phase:sess.phase||'discovery'
   }, sess.data||{});
-  S.messages ||= []; S.nodes ||= []; S.edges ||= []; S.opportunities ||= []; S.compliance ||= []; S.useCases ||= [];
+  S.messages ||= []; S.nodes ||= []; S.edges ||= []; S.opportunities ||= []; S.compliance ||= []; S.useCases ||= []; S.audit ||= '';
   document.getElementById('sessionChip').textContent = (S.clientName||'—') + ' · ' + (S.engagementTitle||'');
   chatEl.innerHTML='';
   S.messages.forEach(m=>{
@@ -944,6 +967,52 @@ function openReportModal(){
 document.getElementById('genAnalysis').onclick = generateUseCases;
 document.getElementById('printReportBtn').onclick = openPrintable;
 document.getElementById('pdfReportBtn').onclick = downloadPdf;
+
+/* ================= Import audit ================= */
+document.getElementById('importAuditBtn').onclick = ()=>{
+  if(!S.sessionId){ toast('Start an engagement first'); openModal('newModal'); return; }
+  document.getElementById('auditStatus').textContent = S.audit ? 'an audit is already imported — importing again replaces it' : '';
+  openModal('auditModal');
+};
+document.getElementById('auditFileBtn').onclick = ()=>document.getElementById('auditFile').click();
+document.getElementById('auditFile').addEventListener('change', ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    document.getElementById('auditText').value = String(rd.result).slice(0, 30000);
+    document.getElementById('auditStatus').textContent = '✓ ' + f.name + ' loaded';
+  };
+  rd.readAsText(f);
+});
+document.getElementById('auditImportBtn').onclick = async ()=>{
+  const text = document.getElementById('auditText').value.trim();
+  const st = document.getElementById('auditStatus');
+  if(!text){ st.textContent = 'paste or upload the audit first'; return; }
+  if(busy) return;
+  busy = true; st.textContent = 'analysing audit…';
+  const sys = `You convert an AI Readiness Audit into starter context for a live on-site consulting session with ${S.clientName} (${S.engagementTitle}). Everything in the audit is UNVERIFIED — capture it, but frame it for on-site confirmation.
+Respond with ONE valid JSON object only, no fences, same schema as the Copilot uses:
+{"reply":"a short brief for the consultant: what the audit says, the 3-5 most promising threads to pull on-site, and ONE opening question to start verification","phase":"discovery","map":{"addNodes":[{"id":"slug","label":"","actor":"","system":"","duration":"","pain":["(audit) …"]}],"addEdges":[{"from":"","to":"","label":""}]},"opportunities":[{"id":"opp-slug","nodeId":"slug","title":"","description":"(from audit — verify) …","aiApproach":"","impact":"high|medium|low","effort":"high|medium|low"}],"compliance":[{"id":"comp-slug","targetType":"node|opportunity","targetId":"slug","tier":"prohibited|high|limited|minimal","reasoning":"","obligations":["…"]}]}
+Only create nodes for processes the audit actually describes; prefix audit-sourced pain points with "(audit)". Do not invent detail the audit doesn't contain.`;
+  try{
+    const r = await api({ action:'chat', system: sys, max_tokens: 4000, model: cfg.model || undefined,
+      messages:[{role:'user', content:'AUDIT FINDINGS:\n' + text}] });
+    const parsed = parseReply(r.text);
+    S.audit = text.slice(0, 8000);
+    applyUpdates(parsed);
+    S.messages.push({role:'user', content:'[Imported AI Readiness Audit findings — seeded into the engagement]'});
+    S.messages.push({role:'assistant', content: r.text});
+    addMsg('user', '[Imported AI Readiness Audit findings]');
+    addMsg('assistant', parsed.reply || 'Audit imported.');
+    speak(parsed.reply);
+    closeModal('auditModal');
+    document.getElementById('auditText').value = '';
+    document.getElementById('zoomFit').click();
+    scheduleSave();
+    toast('Audit imported — map seeded');
+  }catch(e){ st.textContent = '✗ ' + e.message; }
+  finally{ busy = false; }
+};
 
 /* ================= Modals, toast, misc ================= */
 function openModal(id){ document.getElementById(id).classList.add('open'); }
