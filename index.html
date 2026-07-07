@@ -31,6 +31,7 @@ header{
 }
 .wordmark{font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;letter-spacing:.02em}
 .wordmark span{color:#8FA3F0;font-weight:500}
+.ver{font-size:10.5px;color:#7C818E;border:1px solid #3A3E49;border-radius:5px;padding:2px 7px}
 .session-chip{
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:#C9CCD6;
   border:1px solid #3A3E49;border-radius:6px;padding:5px 10px;max-width:340px;
@@ -197,6 +198,7 @@ ul.pain{margin:4px 0 0 16px}
 
 <header>
   <div class="wordmark">Engagement Copilot <span>/ Quantum Build</span></div>
+  <div class="ver mono" id="verTag"></div>
   <div class="session-chip" id="sessionChip">No session — start one to begin</div>
   <div class="spacer"></div>
   <div class="save-state" id="saveState"></div>
@@ -329,6 +331,12 @@ ul.pain{margin:4px 0 0 16px}
 
 <script>
 'use strict';
+
+/* ================= Version ================= */
+const APP_VERSION = '1.2.0';   // bump this on every change — shows in the header
+document.getElementById('verTag').textContent = 'v' + APP_VERSION;
+document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
+console.log('Engagement Copilot front-end v' + APP_VERSION);
 
 /* ================= Storage (safe wrapper) ================= */
 const store = (() => {
@@ -840,7 +848,7 @@ document.getElementById('testBackend').onclick = async ()=>{
   el.textContent = 'testing…';
   const prev = cfg.url;
   cfg.url = document.getElementById('cfgUrl').value.trim();
-  try{ const r = await api({action:'ping'}); el.textContent = '✓ connected — Sheet ready'; }
+  try{ const r = await api({action:'ping'}); el.textContent = '✓ connected — backend v' + (r.version||'?') + ' — Sheet ready'; }
   catch(e){ el.textContent = '✗ ' + e.message; }
   finally{ if(!document.getElementById('cfgUrl').value.trim()) cfg.url = prev; }
 };
