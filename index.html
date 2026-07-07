@@ -121,6 +121,13 @@ main{flex:1;display:flex;min-height:0}
 .msg .body{line-height:1.55;white-space:pre-wrap}
 .msg.user .body{background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;padding:10px 13px}
 .msg.assistant .who{color:var(--cobalt)}
+.say-btn{
+  margin-top:6px;background:none;border:1px solid var(--line);border-radius:999px;
+  padding:3px 10px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--ink-2);
+}
+.say-btn:hover{border-color:var(--cobalt);color:var(--cobalt)}
+.say-btn.ask{border-color:var(--cobalt);color:var(--cobalt);margin-right:6px}
+.say-btn.ask:hover{background:var(--cobalt-soft)}
 .msg .body strong{font-weight:600}
 .thinking{display:flex;gap:5px;padding:6px 2px}
 .thinking i{width:6px;height:6px;border-radius:50%;background:var(--cobalt);opacity:.4;animation:blink 1.2s infinite}
@@ -426,7 +433,7 @@ ul.pain{margin:4px 0 0 16px}
 'use strict';
 
 /* ================= Version ================= */
-const APP_VERSION = '1.7.1';   // bump this on every change — shows in the header
+const APP_VERSION = '1.8.0';   // bump this on every change — shows in the header
 document.getElementById('verTag').textContent = 'v' + APP_VERSION;
 document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
 console.log('Engagement Copilot front-end v' + APP_VERSION);
@@ -484,6 +491,7 @@ When in doubt between tiers, choose the stricter tier and say why.
 OUTPUT FORMAT — respond with ONE valid JSON object and NOTHING else (no markdown fences, no preamble):
 {
  "reply": "what you say to Donal/client — plain text, short paragraphs, may use **bold**",
+ "question": "the exact question(s) to pose to the client, phrased naturally for speaking aloud to the room — empty string if this turn asks nothing",
  "phase": "discovery|mapping|opportunities|compliance|report",
  "map": {
    "addNodes": [{"id":"slug","label":"Step name","actor":"who does it","system":"tool used or empty","duration":"e.g. 2 hrs/wk or empty","pain":["pain point", "..."]}],
@@ -522,11 +530,29 @@ const chatEl = document.getElementById('chat');
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
 
-function addMsg(role, text){
+function addMsg(role, text, question){
   const d = document.createElement('div');
   d.className = 'msg ' + role;
   const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
   d.innerHTML = '<div class="who">' + (role==='user'?'You':'Copilot') + '</div><div class="body">' + safe + '</div>';
+  if(role==='assistant' && ('speechSynthesis' in window)){
+    const row = document.createElement('div');
+    if(question && question.trim()){
+      const ask = document.createElement('button');
+      ask.className = 'say-btn ask';
+      ask.title = 'The Copilot voices this question to the room';
+      ask.textContent = '🎙 Ask the question aloud';
+      ask.onclick = ()=>speakText(question, true);
+      row.appendChild(ask);
+    }
+    const btn = document.createElement('button');
+    btn.className = 'say-btn';
+    btn.title = 'Read the full message aloud';
+    btn.textContent = '🔊 Read aloud';
+    btn.onclick = ()=>speakText(text, true);
+    row.appendChild(btn);
+    d.appendChild(row);
+  }
   chatEl.appendChild(d);
   chatEl.scrollTop = chatEl.scrollHeight;
 }
@@ -555,7 +581,7 @@ async function send(text){
     const parsed = parseReply(r.text);
     S.messages.push({role:'assistant', content: r.text});
     applyUpdates(parsed);
-    addMsg('assistant', parsed.reply || '(no reply text)');
+    addMsg('assistant', parsed.reply || '(no reply text)', parsed.question);
     speak(parsed.reply);
     scheduleSave();
   }catch(err){
@@ -841,7 +867,7 @@ function loadIntoUI(sess){
   chatEl.innerHTML='';
   S.messages.forEach(m=>{
     if(m.role==='user') addMsg('user', m.content);
-    else addMsg('assistant', parseReply(m.content).reply || m.content);
+    else { const pr = parseReply(m.content); addMsg('assistant', pr.reply || m.content, pr.question); }
   });
   selectedNode=null; closeDrawer(); renderPhases(); renderMap(); renderPillars();
   const resume = `**Session resumed** — ${S.nodes.length} process step(s) mapped, ${S.opportunities.length} opportunit${S.opportunities.length===1?'y':'ies'}, ${S.compliance.length} compliance flag(s). Phase: ${S.phase}.\nThe map is live — keep describing processes and it extends where we left off. Ask "recap where we left off" for a full briefing.`;
@@ -864,7 +890,7 @@ async function createSession(){
   if(auditTxt){
     document.getElementById('neAudit').value = '';
     document.getElementById('neAuditStatus').textContent = '';
-    const ok = await runAuditImport(auditTxt, null);
+    const ok = await runAuditImport(auditTxt);
     if(ok) return; // audit briefing is the opener
   }
   const opener = `New engagement started for **${client}** — ${title}.\n\nLet's set the scene. In a sentence or two: what does ${client} do, and roughly how many people work there?`;
@@ -1095,10 +1121,11 @@ document.getElementById('auditFile').addEventListener('change', ev=>{
   };
   rd.readAsText(f);
 });
-async function runAuditImport(text, statusEl){
-  if(busy) return false;
-  busy = true;
-  if(statusEl) statusEl.textContent = 'analysing audit…';
+async function runAuditImport(text){
+  if(busy){ toast('Still working on the previous request — try again in a moment'); return false; }
+  busy = true; sendBtn.disabled = true;
+  addMsg('user', '[Importing AI Readiness Audit findings…]');
+  showThinking(true);
   const sys = `You convert an AI Readiness Audit into starter context for a live on-site consulting session with ${S.clientName} (${S.engagementTitle}). Everything in the audit is UNVERIFIED — capture it, but frame it for on-site confirmation.
 Respond with ONE valid JSON object only, no fences, same schema as the Copilot uses:
 {"reply":"a short brief for the consultant: what the audit says, the 3-5 most promising threads to pull on-site, and ONE opening question to start verification","phase":"discovery","map":{"addNodes":[{"id":"slug","label":"","actor":"","system":"","duration":"","pain":["(audit) …"]}],"addEdges":[{"from":"","to":"","label":""}]},"opportunities":[{"id":"opp-slug","nodeId":"slug","title":"","description":"(from audit — verify) …","aiApproach":"","impact":"high|medium|low","effort":"high|medium|low"}],"compliance":[{"id":"comp-slug","targetType":"node|opportunity","targetId":"slug","tier":"prohibited|high|limited|minimal","reasoning":"","obligations":["…"]}],"coverage":{"pillar-id":0-100 for the eight pillars company-profile, ai-strategy-leadership, data-readiness, technology-infrastructure, people-skills, processes-operations, governance-compliance, use-cases-opportunities — rate how much the audit already covers each}}
@@ -1111,29 +1138,27 @@ Only create nodes for processes the audit actually describes; prefix audit-sourc
     applyUpdates(parsed);
     S.messages.push({role:'user', content:'[Imported AI Readiness Audit findings — seeded into the engagement]'});
     S.messages.push({role:'assistant', content: r.text});
-    addMsg('user', '[Imported AI Readiness Audit findings]');
-    addMsg('assistant', parsed.reply || 'Audit imported.');
+    addMsg('assistant', parsed.reply || 'Audit imported.', parsed.question);
     speak(parsed.reply);
     document.getElementById('zoomFit').click();
     scheduleSave();
-    toast('Audit imported — map seeded');
+    toast('✓ Audit imported — map seeded');
     return true;
   }catch(e){
-    if(statusEl) statusEl.textContent = '✗ ' + e.message;
-    else toast('Audit import failed: ' + e.message);
+    addMsg('assistant', '⚠ Audit import failed: ' + e.message + '\nYour audit text was not saved — use Import audit to try again.');
     return false;
-  }finally{ busy = false; }
+  }finally{
+    busy = false; sendBtn.disabled = false; showThinking(false);
+  }
 }
 
-document.getElementById('auditImportBtn').onclick = async ()=>{
+document.getElementById('auditImportBtn').onclick = ()=>{
   const text = document.getElementById('auditText').value.trim();
   const st = document.getElementById('auditStatus');
   if(!text){ st.textContent = 'paste or upload the audit first'; return; }
-  const ok = await runAuditImport(text, st);
-  if(ok){
-    closeModal('auditModal');
-    document.getElementById('auditText').value = '';
-  }
+  closeModal('auditModal');
+  document.getElementById('auditText').value = '';
+  runAuditImport(text);   // progress shows in the conversation
 };
 
 /* ================= Modals, toast, misc ================= */
@@ -1246,8 +1271,10 @@ voiceBtn.onclick = ()=>{
 };
 refreshVoiceBtn();
 
-function speak(text){
-  if(!voiceOn || !('speechSynthesis' in window)) return;
+function speak(text){ speakText(text, false); }
+function speakText(text, force){
+  if(!('speechSynthesis' in window)) return;
+  if(!voiceOn && !force) return;
   const clean = String(text||'').replace(/\*\*/g,'').replace(/⚠/g,'Warning: ');
   if(!clean) return;
   const wasListening = recActive;
