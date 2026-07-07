@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engagement Copilot — Quantum Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F6F5F0; --panel:#FFFFFF; --ink:#191C22; --ink-2:#5B5F6B;
+  --line:#DCD9CF; --line-soft:#E9E7DF; --dot:#D8D5C9;
+  --cobalt:#2440B3; --cobalt-soft:#E7EBFB;
+  --r-prohibited:#A31621; --r-high:#C05500; --r-limited:#9A7B00; --r-minimal:#2E7D4F;
+  --shadow:0 8px 28px rgba(25,28,34,.10);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'IBM Plex Sans',sans-serif;color:var(--ink);background:var(--paper);
+  display:flex;flex-direction:column;overflow:hidden;font-size:15px;
+}
+button{font-family:inherit;cursor:pointer}
+h1,h2,h3{font-family:'Archivo',sans-serif}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+/* ---------- Top bar ---------- */
+header{
+  display:flex;align-items:center;gap:16px;padding:10px 18px;
+  background:var(--ink);color:#F6F5F0;flex-shrink:0;
+}
+.wordmark{font-family:'Archivo',sans-serif;font-weight:700;font-size:16px;letter-spacing:.02em}
+.wordmark span{color:#8FA3F0;font-weight:500}
+.session-chip{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:#C9CCD6;
+  border:1px solid #3A3E49;border-radius:6px;padding:5px 10px;max-width:340px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.spacer{flex:1}
+.save-state{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#8B8F9B}
+.hbtn{
+  background:transparent;color:#E4E6EC;border:1px solid #3A3E49;border-radius:6px;
+  padding:6px 12px;font-size:13px;font-weight:500;
+}
+.hbtn:hover{border-color:#6B7080;background:#242832}
+.hbtn.primary{background:var(--cobalt);border-color:var(--cobalt)}
+.hbtn.primary:hover{background:#1B34A0}
+.hbtn:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--cobalt);outline-offset:2px}
+
+/* ---------- Layout ---------- */
+main{flex:1;display:flex;min-height:0}
+#canvasWrap{flex:1;position:relative;min-width:0;
+  background-color:var(--paper);
+  background-image:radial-gradient(var(--dot) 1.1px, transparent 1.1px);
+  background-size:22px 22px;
+}
+#mapSvg{width:100%;height:100%;display:block;cursor:grab}
+#mapSvg.panning{cursor:grabbing}
+.canvas-empty{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--ink-2);pointer-events:none;text-align:center;padding:0 40px;
+}
+.canvas-empty h2{font-size:20px;font-weight:600;color:var(--ink);margin-bottom:8px}
+.canvas-empty p{max-width:420px;line-height:1.55}
+.canvas-legend{
+  position:absolute;left:16px;bottom:14px;display:flex;gap:14px;flex-wrap:wrap;
+  font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-2);
+  background:rgba(246,245,240,.9);border:1px solid var(--line);border-radius:8px;padding:8px 12px;
+}
+.canvas-legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.canvas-tools{position:absolute;right:16px;top:14px;display:flex;gap:8px}
+.ctool{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-size:13px;box-shadow:var(--shadow)}
+.ctool:hover{border-color:var(--ink-2)}
+
+/* ---------- Right panel ---------- */
+#side{
+  width:430px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;
+}
+.phases{
+  display:flex;border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.phase{
+  flex:1;text-align:center;padding:9px 2px 8px;font-family:'IBM Plex Mono',monospace;
+  font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);
+  border-bottom:2px solid transparent;
+}
+.phase.active{color:var(--cobalt);border-bottom-color:var(--cobalt);font-weight:500}
+.phase.done{color:var(--ink)}
+#chat{flex:1;overflow-y:auto;padding:18px 18px 8px;min-height:0}
+.msg{margin-bottom:14px;max-width:100%;animation:rise .25s ease}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg .who{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);margin-bottom:4px}
+.msg .body{line-height:1.55;white-space:pre-wrap}
+.msg.user .body{background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;padding:10px 13px}
+.msg.assistant .who{color:var(--cobalt)}
+.msg .body strong{font-weight:600}
+.thinking{display:flex;gap:5px;padding:6px 2px}
+.thinking i{width:6px;height:6px;border-radius:50%;background:var(--cobalt);opacity:.4;animation:blink 1.2s infinite}
+.thinking i:nth-child(2){animation-delay:.2s}.thinking i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+#composer{border-top:1px solid var(--line);padding:12px 14px;flex-shrink:0;background:var(--panel)}
+#composer .row{display:flex;gap:8px;align-items:flex-end}
+#input{
+  flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font-family:inherit;font-size:14px;line-height:1.45;max-height:130px;background:var(--paper);
+}
+#sendBtn{
+  background:var(--cobalt);color:#fff;border:none;border-radius:10px;padding:10px 16px;
+  font-weight:600;font-size:14px;flex-shrink:0;
+}
+#sendBtn:disabled{opacity:.45;cursor:default}
+.starter{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+.starter button{
+  background:var(--cobalt-soft);color:var(--cobalt);border:none;border-radius:999px;
+  padding:5px 11px;font-size:12px;font-weight:500;
+}
+
+/* ---------- Node detail drawer ---------- */
+#drawer{
+  position:absolute;top:14px;left:16px;width:330px;max-height:calc(100% - 90px);
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  display:none;flex-direction:column;overflow:hidden;
+}
+#drawer.open{display:flex}
+#drawer .dhead{padding:13px 15px 10px;border-bottom:1px solid var(--line-soft)}
+#drawer .dhead h3{font-size:15px;font-weight:600}
+#drawer .dhead .meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-2);margin-top:3px}
+#drawer .dbody{overflow-y:auto;padding:12px 15px 15px;font-size:13.5px;line-height:1.5}
+#drawer .dclose{position:absolute;top:8px;right:8px;background:none;border:none;font-size:17px;color:var(--ink-2);padding:4px 8px}
+.tag{
+  display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:500;
+  padding:3px 8px;border-radius:5px;margin:2px 4px 2px 0;color:#fff;
+}
+.opp-card,.comp-card{border:1px solid var(--line-soft);border-radius:9px;padding:9px 11px;margin:8px 0}
+.opp-card h4,.comp-card h4{font-size:13px;font-weight:600;margin-bottom:3px;font-family:'IBM Plex Sans',sans-serif}
+.opp-card .kv,.comp-card .kv{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-2);margin-top:5px}
+.section-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-2);margin:12px 0 4px}
+ul.pain{margin:4px 0 0 16px}
+
+/* ---------- Modals ---------- */
+.overlay{position:fixed;inset:0;background:rgba(25,28,34,.45);display:none;align-items:center;justify-content:center;z-index:40}
+.overlay.open{display:flex}
+.modal{background:var(--panel);border-radius:14px;width:min(560px,92vw);max-height:86vh;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.modal .mhead{padding:16px 20px 12px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center}
+.modal .mhead h2{font-size:17px}
+.modal .mbody{padding:16px 20px;overflow-y:auto}
+.modal .mfoot{padding:12px 20px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--line-soft)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field .hint{font-size:12px;color:var(--ink-2);margin-top:4px;line-height:1.4}
+.field input,.field textarea{
+  width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:14px;background:var(--paper);
+}
+.mbtn{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:500}
+.mbtn.primary{background:var(--cobalt);border-color:var(--cobalt);color:#fff}
+.mbtn.danger{color:var(--r-prohibited);border-color:var(--r-prohibited)}
+.sess-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line-soft)}
+.sess-row .info{flex:1;min-width:0}
+.sess-row .info b{font-size:14px}
+.sess-row .info .mono{font-size:11px;color:var(--ink-2)}
+.toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+  padding:10px 18px;border-radius:10px;font-size:13.5px;z-index:60;display:none;box-shadow:var(--shadow);
+}
+
+/* ---------- SVG map ---------- */
+.node-box{fill:var(--panel);stroke:var(--line);stroke-width:1.4;rx:10}
+.node-g{cursor:pointer}
+.node-g:hover .node-box{stroke:var(--cobalt)}
+.node-g.selected .node-box{stroke:var(--cobalt);stroke-width:2}
+.node-title{font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600;fill:var(--ink)}
+.node-actor{font-family:'IBM Plex Mono',monospace;font-size:10px;fill:var(--ink-2)}
+.edge{fill:none;stroke:#9A9DA8;stroke-width:1.5}
+.edge-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;fill:var(--ink-2)}
+.badge-text{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;fill:#fff}
+.draw-in{animation:drawin .45s ease}
+@keyframes drawin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media (max-width:900px){
+  #side{width:min(100vw,380px)}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Engagement Copilot <span>/ Quantum Build</span></div>
+  <div class="session-chip" id="sessionChip">No session — start one to begin</div>
+  <div class="spacer"></div>
+  <div class="save-state" id="saveState"></div>
+  <button class="hbtn" id="sessionsBtn">Sessions</button>
+  <button class="hbtn" id="reportBtn">Report</button>
+  <button class="hbtn" id="configBtn">Config</button>
+  <button class="hbtn primary" id="newBtn">New engagement</button>
+</header>
+
+<main>
+  <div id="canvasWrap">
+    <svg id="mapSvg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="#9A9DA8"></path>
+        </marker>
+      </defs>
+      <g id="viewport"></g>
+    </svg>
+    <div class="canvas-empty" id="canvasEmpty">
+      <h2>The process map builds here as you talk</h2>
+      <p>Start an engagement, then describe the client's workflow in the conversation. Every process, actor and handoff you uncover is drawn live — with AI opportunities and EU AI Act flags marked on each step.</p>
+    </div>
+    <div class="canvas-legend">
+      <span><i class="dot" style="background:var(--r-minimal)"></i>Minimal risk</span>
+      <span><i class="dot" style="background:var(--r-limited)"></i>Limited</span>
+      <span><i class="dot" style="background:var(--r-high)"></i>High-risk</span>
+      <span><i class="dot" style="background:var(--r-prohibited)"></i>Prohibited</span>
+      <span><i class="dot" style="background:var(--cobalt)"></i>AI opportunity</span>
+    </div>
+    <div class="canvas-tools">
+      <button class="ctool" id="zoomFit" title="Fit map to screen">Fit</button>
+      <button class="ctool" id="zoomIn">+</button>
+      <button class="ctool" id="zoomOut">−</button>
+    </div>
+
+    <div id="drawer">
+      <button class="dclose" id="drawerClose" aria-label="Close">✕</button>
+      <div class="dhead">
+        <h3 id="dTitle"></h3>
+        <div class="meta" id="dMeta"></div>
+      </div>
+      <div class="dbody" id="dBody"></div>
+    </div>
+  </div>
+
+  <div id="side">
+    <div class="phases" id="phaseBar">
+      <div class="phase" data-p="discovery">Discovery</div>
+      <div class="phase" data-p="mapping">Mapping</div>
+      <div class="phase" data-p="opportunities">Opportunities</div>
+      <div class="phase" data-p="compliance">Compliance</div>
+      <div class="phase" data-p="report">Report</div>
+    </div>
+    <div id="chat"></div>
+    <div id="composer">
+      <div class="row">
+        <textarea id="input" rows="1" placeholder="Describe the client, a process, a pain point…"></textarea>
+        <button id="sendBtn">Send</button>
+      </div>
+      <div class="starter" id="starters"></div>
+    </div>
+  </div>
+</main>
+
+<!-- Config modal -->
+<div class="overlay" id="configModal">
+  <div class="modal">
+    <div class="mhead"><h2>Configuration</h2></div>
+    <div class="mbody">
+      <div class="field">
+        <label for="cfgUrl">Apps Script backend URL</label>
+        <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+        <div class="hint">Deploy Code.gs as a web app (Execute as: Me · Access: Anyone) and paste the /exec URL here. It handles both AI calls and session storage — the Google Sheet is created automatically on first save.</div>
+      </div>
+      <div class="field">
+        <label for="cfgModel">Model (optional override)</label>
+        <input id="cfgModel" type="text" placeholder="Leave blank for backend default">
+      </div>
+      <div class="field">
+        <button class="mbtn" id="testBackend">Test connection</button>
+        <span class="mono" id="testResult" style="font-size:12px;margin-left:8px"></span>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn" data-close="configModal">Cancel</button>
+      <button class="mbtn primary" id="cfgSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- New engagement modal -->
+<div class="overlay" id="newModal">
+  <div class="modal">
+    <div class="mhead"><h2>New engagement</h2></div>
+    <div class="mbody">
+      <div class="field">
+        <label for="neClient">Client name</label>
+        <input id="neClient" type="text" placeholder="e.g. Murphy Logistics Ltd">
+      </div>
+      <div class="field">
+        <label for="neTitle">Engagement title</label>
+        <input id="neTitle" type="text" placeholder="e.g. AI Readiness Audit — Operations">
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="mbtn" data-close="newModal">Cancel</button>
+      <button class="mbtn primary" id="neCreate">Start engagement</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sessions modal -->
+<div class="overlay" id="sessModal">
+  <div class="modal">
+    <div class="mhead"><h2>Saved engagements</h2></div>
+    <div class="mbody" id="sessList"><p class="mono" style="font-size:12px;color:var(--ink-2)">Loading…</p></div>
+    <div class="mfoot">
+      <button class="mbtn" id="exportJson">Export current as JSON</button>
+      <button class="mbtn" id="importJson">Import JSON</button>
+      <input type="file" id="importFile" accept=".json" style="display:none">
+      <button class="mbtn" data-close="sessModal">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ================= Storage (safe wrapper) ================= */
+const store = (() => {
+  let mem = {};
+  try { localStorage.setItem('__t','1'); localStorage.removeItem('__t');
+    return { get:k=>localStorage.getItem(k), set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
+  } catch(e){
+    return { get:k=>mem[k]??null, set:(k,v)=>{mem[k]=v}, del:k=>{delete mem[k]} };
+  }
+})();
+
+/* ================= App state ================= */
+const PHASES = ['discovery','mapping','opportunities','compliance','report'];
+const RISK_COLORS = { prohibited:'var(--r-prohibited)', high:'var(--r-high)', limited:'var(--r-limited)', minimal:'var(--r-minimal)' };
+const RISK_LABEL = { prohibited:'PROHIBITED', high:'HIGH-RISK', limited:'LIMITED', minimal:'MINIMAL' };
+
+let S = blankSession();
+let cfg = { url: store.get('ec_backend') || '', model: store.get('ec_model') || '' };
+let view = { x:0, y:0, k:1 };
+let selectedNode = null;
+let busy = false;
+let saveTimer = null;
+
+function blankSession(){
+  return {
+    sessionId:null, clientName:'', engagementTitle:'', phase:'discovery',
+    messages:[], nodes:[], edges:[], opportunities:[], compliance:[]
+  };
+}
+
+/* ================= System prompt ================= */
+function systemPrompt(){
+  return `You are the Engagement Copilot: a world-class AI-readiness consultant and EU AI Act specialist, co-piloting a LIVE on-site discovery session. The person typing is Donal Scannell, AI Readiness Auditor (Quantum Build Consultancy, Ireland). The client may be watching the screen, so be professional, concise and jargon-free.
+
+CLIENT: ${S.clientName || 'unknown'} — ENGAGEMENT: ${S.engagementTitle || 'unknown'} — CURRENT PHASE: ${S.phase}
+
+YOUR METHOD (consulting best practice):
+- Ask at most TWO focused questions per turn. Go one layer deeper each time.
+- Discovery arc: business context → walk each core process end-to-end → actors, systems, durations → pain points and bottlenecks → quantify (volume, time, cost, error rate) → data landscape → then AI opportunities → then compliance → then report.
+- Whenever ANY process step, actor, handoff or decision is mentioned, capture it as map nodes/edges immediately. Build the map incrementally and keep node ids stable (slug style, e.g. "invoice-approval").
+- An AI opportunity must be tied to a real pain point with plausible ROI — never tech for tech's sake. Rate impact and effort honestly.
+- Advance "phase" only when the current phase is genuinely done; you may move it backwards if new processes surface.
+
+EU AI ACT ASSESSMENT (apply to every opportunity, and to existing steps where relevant):
+- prohibited (Art 5): social scoring; manipulative/exploitative techniques; emotion recognition in workplace or education; untargeted facial-image scraping; predictive policing on profiling alone.
+- high (Annex III): AI in employment/HR (CV screening, promotion, monitoring); creditworthiness; access to essential services; education scoring; biometrics; critical infrastructure; safety components. Obligations: risk management system, data governance, technical documentation, logging, human oversight, accuracy/robustness, FRIA where applicable, conformity assessment.
+- limited: transparency duties — chatbots must disclose they are AI; synthetic/deepfake content must be labelled; emotion recognition/biometric categorisation must be disclosed.
+- minimal: everything else (most back-office automation, drafting aids, forecasting, summarisation with human review). GPAI-based tools inherit provider transparency duties.
+When in doubt between tiers, choose the stricter tier and say why.
+
+OUTPUT FORMAT — respond with ONE valid JSON object and NOTHING else (no markdown fences, no preamble):
+{
+ "reply": "what you say to Donal/client — plain text, short paragraphs, may use **bold**",
+ "phase": "discovery|mapping|opportunities|compliance|report",
+ "map": {
+   "addNodes": [{"id":"slug","label":"Step name","actor":"who does it","system":"tool used or empty","duration":"e.g. 2 hrs/wk or empty","pain":["pain point", "..."]}],
+   "updateNodes": [{"id":"slug", ...only changed fields...}],
+   "addEdges": [{"from":"slug","to":"slug","label":"optional"}],
+   "removeNodeIds": [], "removeEdges": []
+ },
+ "opportunities": [{"id":"opp-slug","nodeId":"slug","title":"","description":"","aiApproach":"concrete approach incl. suggested tooling","impact":"high|medium|low","effort":"high|medium|low"}],
+ "compliance": [{"id":"comp-slug","targetType":"node|opportunity","targetId":"slug","tier":"prohibited|high|limited|minimal","reasoning":"one or two sentences","obligations":["…"]}]
+}
+All map/opportunity/compliance arrays are optional — include only what changed this turn. Opportunities and compliance entries with an existing id REPLACE the previous version. Never invent facts the user hasn't given you; ask instead.
+
+CURRENT STATE SNAPSHOT (do not re-add existing nodes):
+nodes: ${JSON.stringify(S.nodes.map(n=>({id:n.id,label:n.label})))}
+edges: ${JSON.stringify(S.edges)}
+opportunities: ${JSON.stringify(S.opportunities.map(o=>o.id))}
+compliance: ${JSON.stringify(S.compliance.map(c=>c.id))}`;
+}
+
+/* ================= Backend calls ================= */
+async function api(body){
+  if(!cfg.url) throw new Error('Backend URL not set — open Config.');
+  const res = await fetch(cfg.url, {
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || 'Backend error');
+  return data;
+}
+
+/* ================= Chat ================= */
+const chatEl = document.getElementById('chat');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+
+function addMsg(role, text){
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  d.innerHTML = '<div class="who">' + (role==='user'?'You':'Copilot') + '</div><div class="body">' + safe + '</div>';
+  chatEl.appendChild(d);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function showThinking(on){
+  let t = document.getElementById('thinkingRow');
+  if(on && !t){
+    t = document.createElement('div'); t.id='thinkingRow'; t.className='thinking';
+    t.innerHTML='<i></i><i></i><i></i>';
+    chatEl.appendChild(t); chatEl.scrollTop = chatEl.scrollHeight;
+  } else if(!on && t){ t.remove(); }
+}
+
+async function send(text){
+  if(busy) return;
+  if(!S.sessionId){ toast('Start an engagement first'); openModal('newModal'); return; }
+  text = (text || inputEl.value).trim();
+  if(!text) return;
+  inputEl.value=''; autosize();
+  addMsg('user', text);
+  S.messages.push({role:'user', content:text});
+  busy = true; sendBtn.disabled = true; showThinking(true);
+  try{
+    const history = S.messages.slice(-30); // keep context lean; state snapshot carries the rest
+    const r = await api({ action:'chat', system: systemPrompt(), messages: history, model: cfg.model || undefined, max_tokens: 4000 });
+    const parsed = parseReply(r.text);
+    S.messages.push({role:'assistant', content: r.text});
+    applyUpdates(parsed);
+    addMsg('assistant', parsed.reply || '(no reply text)');
+    scheduleSave();
+  }catch(err){
+    addMsg('assistant', '⚠ ' + err.message);
+  }finally{
+    busy=false; sendBtn.disabled=false; showThinking(false);
+  }
+}
+
+function parseReply(text){
+  // Strip accidental fences, find outermost JSON object
+  let t = text.trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if(a === -1 || b === -1){ return { reply: text }; }
+  try { return JSON.parse(t.slice(a, b+1)); }
+  catch(e){ return { reply: text }; }
+}
+
+function applyUpdates(p){
+  if(p.phase && PHASES.includes(p.phase)) S.phase = p.phase;
+  const m = p.map || {};
+  (m.addNodes||[]).forEach(n=>{
+    if(!n.id) return;
+    const ex = S.nodes.find(x=>x.id===n.id);
+    if(ex) Object.assign(ex, n); else S.nodes.push(Object.assign({pain:[]}, n));
+  });
+  (m.updateNodes||[]).forEach(u=>{
+    const ex = S.nodes.find(x=>x.id===u.id);
+    if(ex) Object.assign(ex, u);
+  });
+  (m.removeNodeIds||[]).forEach(id=>{
+    S.nodes = S.nodes.filter(n=>n.id!==id);
+    S.edges = S.edges.filter(e=>e.from!==id && e.to!==id);
+  });
+  (m.addEdges||[]).forEach(e=>{
+    if(!e.from||!e.to) return;
+    if(!S.edges.some(x=>x.from===e.from&&x.to===e.to)) S.edges.push(e);
+  });
+  (m.removeEdges||[]).forEach(e=>{
+    S.edges = S.edges.filter(x=>!(x.from===e.from&&x.to===e.to));
+  });
+  (p.opportunities||[]).forEach(o=>{
+    const i = S.opportunities.findIndex(x=>x.id===o.id);
+    if(i>-1) S.opportunities[i]=o; else S.opportunities.push(o);
+  });
+  (p.compliance||[]).forEach(c=>{
+    const i = S.compliance.findIndex(x=>x.id===c.id);
+    if(i>-1) S.compliance[i]=c; else S.compliance.push(c);
+  });
+  renderPhases(); renderMap();
+  if(selectedNode) openDrawer(selectedNode);
+}
+
+/* ================= Phases ================= */
+function renderPhases(){
+  const idx = PHASES.indexOf(S.phase);
+  document.querySelectorAll('.phase').forEach(el=>{
+    const i = PHASES.indexOf(el.dataset.p);
+    el.classList.toggle('active', i===idx);
+    el.classList.toggle('done', i<idx);
+  });
+}
+
+/* ================= Map layout & render ================= */
+const svg = document.getElementById('mapSvg');
+const vp = document.getElementById('viewport');
+const NODE_W = 190, NODE_H = 66, GAP_X = 80, GAP_Y = 34;
+
+function layout(){
+  // depth = longest path from any root
+  const depth = {}, incoming = {};
+  S.nodes.forEach(n=>{ depth[n.id]=0; incoming[n.id]=0; });
+  S.edges.forEach(e=>{ if(incoming[e.to]!==undefined) incoming[e.to]++; });
+  // iterate longest-path relaxation (graphs are small)
+  for(let pass=0; pass<S.nodes.length+2; pass++){
+    let changed=false;
+    S.edges.forEach(e=>{
+      if(depth[e.from]===undefined||depth[e.to]===undefined) return;
+      if(depth[e.to] < depth[e.from]+1){ depth[e.to]=depth[e.from]+1; changed=true; }
+    });
+    if(!changed) break;
+  }
+  const cols = {};
+  S.nodes.forEach(n=>{ (cols[depth[n.id]] ||= []).push(n); });
+  const pos = {};
+  Object.keys(cols).map(Number).sort((a,b)=>a-b).forEach(c=>{
+    cols[c].forEach((n,i)=>{
+      pos[n.id] = { x: 40 + c*(NODE_W+GAP_X), y: 40 + i*(NODE_H+GAP_Y) };
+    });
+  });
+  return pos;
+}
+
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function trunc(s,n){ s=String(s??''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+function nodeRisk(id){
+  const flags = S.compliance.filter(c=>
+    (c.targetType==='node' && c.targetId===id) ||
+    (c.targetType==='opportunity' && S.opportunities.some(o=>o.id===c.targetId && o.nodeId===id))
+  );
+  const order=['prohibited','high','limited','minimal'];
+  flags.sort((a,b)=>order.indexOf(a.tier)-order.indexOf(b.tier));
+  return flags[0] ? flags[0].tier : null;
+}
+
+function renderMap(){
+  document.getElementById('canvasEmpty').style.display = S.nodes.length ? 'none' : 'flex';
+  const pos = layout();
+  let html = '';
+  // edges first
+  S.edges.forEach(e=>{
+    const a=pos[e.from], b=pos[e.to];
+    if(!a||!b) return;
+    const x1=a.x+NODE_W, y1=a.y+NODE_H/2, x2=b.x, y2=b.y+NODE_H/2;
+    const mx=(x1+x2)/2;
+    html += `<path class="edge" marker-end="url(#arrow)" d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2-4} ${y2}"></path>`;
+    if(e.label) html += `<text class="edge-label" x="${mx}" y="${(y1+y2)/2 - 6}" text-anchor="middle">${esc(trunc(e.label,22))}</text>`;
+  });
+  // nodes
+  S.nodes.forEach(n=>{
+    const p = pos[n.id]; if(!p) return;
+    const risk = nodeRisk(n.id);
+    const opps = S.opportunities.filter(o=>o.nodeId===n.id).length;
+    const sel = selectedNode===n.id ? ' selected' : '';
+    html += `<g class="node-g draw-in${sel}" data-id="${esc(n.id)}" transform="translate(${p.x},${p.y})">`;
+    html += `<rect class="node-box" width="${NODE_W}" height="${NODE_H}" rx="10"></rect>`;
+    if(risk) html += `<rect x="0" y="0" width="5" height="${NODE_H}" rx="2.5" fill="${RISK_COLORS[risk]}"></rect>`;
+    html += `<text class="node-title" x="14" y="24">${esc(trunc(n.label,24))}</text>`;
+    html += `<text class="node-actor" x="14" y="42">${esc(trunc(n.actor||n.system||'',26))}</text>`;
+    if(n.duration) html += `<text class="node-actor" x="14" y="57">${esc(trunc(n.duration,26))}</text>`;
+    if(opps){
+      html += `<g transform="translate(${NODE_W-30},-9)"><rect width="26" height="18" rx="9" fill="var(--cobalt)"></rect><text class="badge-text" x="13" y="13" text-anchor="middle">⚡${opps}</text></g>`;
+    }
+    if(risk){
+      html += `<circle cx="${NODE_W-10}" cy="${NODE_H-12}" r="5" fill="${RISK_COLORS[risk]}"><title>${RISK_LABEL[risk]}</title></circle>`;
+    }
+    html += `</g>`;
+  });
+  vp.innerHTML = html;
+  vp.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+  vp.querySelectorAll('.node-g').forEach(g=>{
+    g.addEventListener('click', ev=>{ ev.stopPropagation(); openDrawer(g.dataset.id); });
+  });
+}
+
+/* Pan & zoom */
+let panning=null;
+svg.addEventListener('mousedown', e=>{ panning={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y}; svg.classList.add('panning'); });
+window.addEventListener('mousemove', e=>{
+  if(!panning) return;
+  view.x = panning.vx + (e.clientX-panning.x);
+  view.y = panning.vy + (e.clientY-panning.y);
+  vp.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+});
+window.addEventListener('mouseup', ()=>{ panning=null; svg.classList.remove('panning'); });
+svg.addEventListener('click', ()=>closeDrawer());
+document.getElementById('zoomIn').onclick = ()=>{ view.k=Math.min(2,view.k*1.2); renderMap(); };
+document.getElementById('zoomOut').onclick = ()=>{ view.k=Math.max(.35,view.k/1.2); renderMap(); };
+document.getElementById('zoomFit').onclick = ()=>{
+  const pos = layout(); const ids = Object.keys(pos);
+  if(!ids.length){ view={x:0,y:0,k:1}; renderMap(); return; }
+  let maxX=0,maxY=0;
+  ids.forEach(id=>{ maxX=Math.max(maxX,pos[id].x+NODE_W); maxY=Math.max(maxY,pos[id].y+NODE_H); });
+  const r = svg.getBoundingClientRect();
+  view.k = Math.min(1, (r.width-60)/(maxX+40), (r.height-60)/(maxY+40));
+  view.x = 20; view.y = 20;
+  renderMap();
+};
+
+/* ================= Node drawer ================= */
+function openDrawer(id){
+  const n = S.nodes.find(x=>x.id===id); if(!n) return;
+  selectedNode = id;
+  document.getElementById('dTitle').textContent = n.label;
+  document.getElementById('dMeta').textContent = [n.actor, n.system, n.duration].filter(Boolean).join(' · ') || 'process step';
+  let h = '';
+  if(n.pain && n.pain.length){
+    h += '<div class="section-label">Pain points</div><ul class="pain">' + n.pain.map(p=>'<li>'+esc(p)+'</li>').join('') + '</ul>';
+  }
+  const opps = S.opportunities.filter(o=>o.nodeId===id);
+  if(opps.length){
+    h += '<div class="section-label">AI opportunities</div>';
+    opps.forEach(o=>{
+      h += `<div class="opp-card"><h4>⚡ ${esc(o.title)}</h4><div>${esc(o.description)}</div>`;
+      if(o.aiApproach) h += `<div style="margin-top:4px;color:var(--ink-2)">${esc(o.aiApproach)}</div>`;
+      h += `<div class="kv">impact: ${esc(o.impact||'—')} · effort: ${esc(o.effort||'—')}</div></div>`;
+    });
+  }
+  const comps = S.compliance.filter(c=>
+    (c.targetType==='node'&&c.targetId===id) ||
+    (c.targetType==='opportunity'&&opps.some(o=>o.id===c.targetId))
+  );
+  if(comps.length){
+    h += '<div class="section-label">EU AI Act</div>';
+    comps.forEach(c=>{
+      h += `<div class="comp-card"><span class="tag" style="background:${RISK_COLORS[c.tier]||'var(--ink-2)'}">${RISK_LABEL[c.tier]||esc(c.tier)}</span>`;
+      h += `<div style="margin-top:5px">${esc(c.reasoning||'')}</div>`;
+      if(c.obligations&&c.obligations.length) h += '<ul class="pain">'+c.obligations.map(o=>'<li>'+esc(o)+'</li>').join('')+'</ul>';
+      h += `</div>`;
+    });
+  }
+  if(!h) h = '<p style="color:var(--ink-2)">No detail captured yet — keep probing this step in the conversation.</p>';
+  document.getElementById('dBody').innerHTML = h;
+  document.getElementById('drawer').classList.add('open');
+  renderMap();
+}
+function closeDrawer(){
+  selectedNode=null;
+  document.getElementById('drawer').classList.remove('open');
+  renderMap();
+}
+document.getElementById('drawerClose').onclick = closeDrawer;
+
+/* ================= Sessions & persistence ================= */
+function scheduleSave(){
+  setSaveState('unsaved changes');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 1800);
+}
+async function saveNow(){
+  if(!S.sessionId || !cfg.url) return;
+  setSaveState('saving…');
+  try{
+    await api({ action:'saveSession', sessionId:S.sessionId, clientName:S.clientName,
+      engagementTitle:S.engagementTitle, phase:S.phase,
+      data:{ messages:S.messages, nodes:S.nodes, edges:S.edges, opportunities:S.opportunities, compliance:S.compliance } });
+    setSaveState('saved ' + new Date().toLocaleTimeString());
+  }catch(e){ setSaveState('save failed'); toast('Save failed: '+e.message); }
+}
+function setSaveState(t){ document.getElementById('saveState').textContent = t; }
+
+function loadIntoUI(sess){
+  S = Object.assign(blankSession(), {
+    sessionId:sess.sessionId, clientName:sess.clientName, engagementTitle:sess.engagementTitle,
+    phase:sess.phase||'discovery'
+  }, sess.data||{});
+  S.messages ||= []; S.nodes ||= []; S.edges ||= []; S.opportunities ||= []; S.compliance ||= [];
+  document.getElementById('sessionChip').textContent = (S.clientName||'—') + ' · ' + (S.engagementTitle||'');
+  chatEl.innerHTML='';
+  S.messages.forEach(m=>{
+    if(m.role==='user') addMsg('user', m.content);
+    else addMsg('assistant', parseReply(m.content).reply || m.content);
+  });
+  selectedNode=null; closeDrawer(); renderPhases(); renderMap();
+  document.getElementById('zoomFit').click();
+  setSaveState('loaded');
+}
+
+async function createSession(){
+  const client = document.getElementById('neClient').value.trim();
+  const title = document.getElementById('neTitle').value.trim() || 'AI Readiness Audit';
+  if(!client){ toast('Client name required'); return; }
+  S = blankSession();
+  S.sessionId = 'eng-' + Date.now().toString(36);
+  S.clientName = client; S.engagementTitle = title;
+  closeModal('newModal');
+  document.getElementById('sessionChip').textContent = client + ' · ' + title;
+  chatEl.innerHTML=''; renderPhases(); renderMap();
+  const opener = `New engagement started for **${client}** — ${title}.\n\nLet's set the scene. In a sentence or two: what does ${client} do, and roughly how many people work there?`;
+  S.messages.push({role:'assistant', content: JSON.stringify({reply:opener, phase:'discovery'})});
+  addMsg('assistant', opener);
+  scheduleSave();
+}
+
+async function showSessions(){
+  openModal('sessModal');
+  const list = document.getElementById('sessList');
+  list.innerHTML = '<p class="mono" style="font-size:12px;color:var(--ink-2)">Loading…</p>';
+  try{
+    const r = await api({action:'listSessions'});
+    if(!r.sessions.length){ list.innerHTML='<p style="color:var(--ink-2)">No saved engagements yet.</p>'; return; }
+    list.innerHTML='';
+    r.sessions.forEach(s=>{
+      const row = document.createElement('div'); row.className='sess-row';
+      row.innerHTML = `<div class="info"><b>${esc(s.clientName)}</b> — ${esc(s.engagementTitle)}<div class="mono">${esc(s.phase)} · updated ${new Date(s.updatedAt).toLocaleString()}</div></div>`;
+      const load = document.createElement('button'); load.className='mbtn primary'; load.textContent='Open';
+      load.onclick = async ()=>{
+        try{ const rr = await api({action:'loadSession', sessionId:s.sessionId}); loadIntoUI(rr.session); closeModal('sessModal'); }
+        catch(e){ toast(e.message); }
+      };
+      const del = document.createElement('button'); del.className='mbtn danger'; del.textContent='Delete';
+      del.onclick = async ()=>{
+        if(!confirm('Delete this engagement permanently?')) return;
+        try{ await api({action:'deleteSession', sessionId:s.sessionId}); row.remove(); }
+        catch(e){ toast(e.message); }
+      };
+      row.append(load, del); list.appendChild(row);
+    });
+  }catch(e){ list.innerHTML = '<p style="color:var(--r-prohibited)">'+esc(e.message)+'</p>'; }
+}
+
+/* JSON export / import (offline backup) */
+document.getElementById('exportJson').onclick = ()=>{
+  if(!S.sessionId){ toast('No active engagement'); return; }
+  const blob = new Blob([JSON.stringify(S,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (S.clientName||'engagement').replace(/\W+/g,'-').toLowerCase() + '-' + S.sessionId + '.json';
+  a.click();
+};
+document.getElementById('importJson').onclick = ()=>document.getElementById('importFile').click();
+document.getElementById('importFile').addEventListener('change', ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const j = JSON.parse(rd.result);
+      loadIntoUI({ sessionId:j.sessionId, clientName:j.clientName, engagementTitle:j.engagementTitle, phase:j.phase, data:j });
+      closeModal('sessModal'); scheduleSave();
+    }catch(e){ toast('Invalid JSON file'); }
+  };
+  rd.readAsText(f);
+});
+
+/* ================= Report ================= */
+function buildReport(){
+  if(!S.sessionId){ toast('No active engagement'); return; }
+  const risk = t=>({prohibited:'#A31621',high:'#C05500',limited:'#9A7B00',minimal:'#2E7D4F'}[t]||'#555');
+  const nodeName = id => (S.nodes.find(n=>n.id===id)||{}).label || id;
+  const oppName = id => (S.opportunities.find(o=>o.id===id)||{}).title || id;
+  const impactRank = {high:0,medium:1,low:2};
+  const opps = [...S.opportunities].sort((a,b)=>(impactRank[a.impact]??3)-(impactRank[b.impact]??3));
+  let h = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(S.clientName)} — AI Readiness Report</title>
+  <style>body{font-family:Georgia,serif;max-width:820px;margin:40px auto;color:#191C22;line-height:1.55;padding:0 20px}
+  h1{font-family:Helvetica,Arial,sans-serif;font-size:26px}h2{font-family:Helvetica,Arial,sans-serif;font-size:18px;margin-top:34px;border-bottom:1px solid #ccc;padding-bottom:5px}
+  .meta{color:#666;font-size:13px}table{border-collapse:collapse;width:100%;font-size:14px;margin-top:10px}
+  td,th{border:1px solid #ddd;padding:7px 9px;text-align:left;vertical-align:top}th{background:#f4f3ee;font-family:Helvetica,Arial,sans-serif;font-size:12px}
+  .tier{color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-family:Helvetica,Arial,sans-serif}
+  @media print{body{margin:10mm}}</style></head><body>`;
+  h += `<h1>AI Readiness Engagement Report</h1>
+  <p class="meta"><b>${esc(S.clientName)}</b> · ${esc(S.engagementTitle)}<br>
+  Prepared by Donal Scannell, AI Readiness Auditor — Quantum Build Consultancy Ltd · ${new Date().toLocaleDateString('en-IE',{day:'numeric',month:'long',year:'numeric'})}</p>`;
+  h += `<h2>1. Processes discovered</h2><table><tr><th>Process step</th><th>Actor / system</th><th>Duration</th><th>Pain points</th></tr>`;
+  S.nodes.forEach(n=>{
+    h += `<tr><td><b>${esc(n.label)}</b></td><td>${esc([n.actor,n.system].filter(Boolean).join(' / '))}</td><td>${esc(n.duration||'')}</td><td>${(n.pain||[]).map(esc).join('; ')}</td></tr>`;
+  });
+  h += `</table>`;
+  h += `<h2>2. AI opportunities (ranked by impact)</h2><table><tr><th>Opportunity</th><th>Process</th><th>Approach</th><th>Impact</th><th>Effort</th></tr>`;
+  opps.forEach(o=>{
+    h += `<tr><td><b>${esc(o.title)}</b><br>${esc(o.description)}</td><td>${esc(nodeName(o.nodeId))}</td><td>${esc(o.aiApproach||'')}</td><td>${esc(o.impact||'')}</td><td>${esc(o.effort||'')}</td></tr>`;
+  });
+  h += `</table>`;
+  h += `<h2>3. EU AI Act compliance register</h2><table><tr><th>Applies to</th><th>Risk tier</th><th>Reasoning</th><th>Key obligations</th></tr>`;
+  S.compliance.forEach(c=>{
+    const target = c.targetType==='opportunity' ? oppName(c.targetId) : nodeName(c.targetId);
+    h += `<tr><td>${esc(target)}</td><td><span class="tier" style="background:${risk(c.tier)}">${esc((c.tier||'').toUpperCase())}</span></td><td>${esc(c.reasoning||'')}</td><td>${(c.obligations||[]).map(esc).join('; ')}</td></tr>`;
+  });
+  h += `</table>`;
+  h += `<h2>4. Notes</h2><p>This report was produced live during an on-site discovery session. Risk classifications are indicative pre-assessments under Regulation (EU) 2024/1689 and should be confirmed with formal legal review before deployment of any high-risk system.</p>`;
+  h += `</body></html>`;
+  const w = window.open('', '_blank');
+  w.document.write(h); w.document.close();
+}
+
+/* ================= Modals, toast, misc ================= */
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('open'); }));
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display='block';
+  clearTimeout(t._h); t._h = setTimeout(()=>t.style.display='none', 3200);
+}
+
+document.getElementById('newBtn').onclick = ()=>openModal('newModal');
+document.getElementById('neCreate').onclick = createSession;
+document.getElementById('sessionsBtn').onclick = showSessions;
+document.getElementById('reportBtn').onclick = buildReport;
+document.getElementById('configBtn').onclick = ()=>{
+  document.getElementById('cfgUrl').value = cfg.url;
+  document.getElementById('cfgModel').value = cfg.model;
+  document.getElementById('testResult').textContent='';
+  openModal('configModal');
+};
+document.getElementById('cfgSave').onclick = ()=>{
+  cfg.url = document.getElementById('cfgUrl').value.trim();
+  cfg.model = document.getElementById('cfgModel').value.trim();
+  store.set('ec_backend', cfg.url); store.set('ec_model', cfg.model);
+  closeModal('configModal'); toast('Config saved');
+};
+document.getElementById('testBackend').onclick = async ()=>{
+  const el = document.getElementById('testResult');
+  el.textContent = 'testing…';
+  const prev = cfg.url;
+  cfg.url = document.getElementById('cfgUrl').value.trim();
+  try{ const r = await api({action:'ping'}); el.textContent = '✓ connected — Sheet ready'; }
+  catch(e){ el.textContent = '✗ ' + e.message; }
+  finally{ if(!document.getElementById('cfgUrl').value.trim()) cfg.url = prev; }
+};
+
+sendBtn.onclick = ()=>send();
+inputEl.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+});
+function autosize(){ inputEl.style.height='auto'; inputEl.style.height=Math.min(130,inputEl.scrollHeight)+'px'; }
+inputEl.addEventListener('input', autosize);
+
+/* Starter prompts */
+const STARTERS = [
+  'Walk me through your day-to-day discovery questions',
+  'The client just described a process — map it',
+  'What should I quantify before recommending anything?',
+  'Assess everything mapped so far under the EU AI Act'
+];
+const stEl = document.getElementById('starters');
+STARTERS.forEach(s=>{
+  const b = document.createElement('button'); b.textContent = s;
+  b.onclick = ()=>send(s);
+  stEl.appendChild(b);
+});
+
+/* Init */
+renderPhases(); renderMap();
+if(!cfg.url) setTimeout(()=>{ toast('Set your Apps Script backend URL in Config to begin'); }, 600);
+</script>
+</body>
+</html>
