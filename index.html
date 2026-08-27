@@ -1271,6 +1271,10 @@ document.getElementById('voicePreview').onclick = ()=>{
   u.rate = 1.02;
   speechSynthesis.speak(u);
 };
+/* Deployment id out of any Apps Script URL form: /macros/s/<id>/exec,
+   /a/macros/<domain>/s/<id>/exec, or the editor's /dev variant. */
+const depId = u => (String(u||'').match(/\/s\/([A-Za-z0-9_-]+)\//)||[])[1] || '';
+
 document.getElementById('testBackend').onclick = async ()=>{
   const el = document.getElementById('testResult');
   el.textContent = 'testing…';
@@ -1283,7 +1287,17 @@ document.getElementById('testBackend').onclick = async ()=>{
     const notes = [];
     if(r.apiKey !== 'set') notes.push('⚠ ANTHROPIC_API_KEY missing in Script Properties');
     if(r.version !== EXPECTS_BACKEND) notes.push('⚠ backend v' + r.version + ', page expects v' + EXPECTS_BACKEND + ' — deploy a new version');
-    if(r.deploymentUrl && r.deploymentUrl.split('/exec')[0] !== cfg.url.split('/exec')[0]) notes.push('⚠ the script reports a different deployment URL — this /exec may be orphaned');
+    /* Compare deployment IDs, not whole URLs. A Workspace account serves the
+       same deployment at BOTH https://script.google.com/macros/s/<id>/exec and
+       https://script.google.com/a/macros/<domain>/s/<id>/exec, and
+       ScriptApp.getService().getUrl() is not reliable about which form — or
+       which deployment — it hands back. Only a genuine ID mismatch is worth
+       reporting, and even then reaching this line at all means the URL you
+       called is alive: an orphaned deployment returns 404, it does not answer. */
+    const mine = depId(cfg.url), theirs = depId(r.deploymentUrl);
+    if(mine && theirs && mine !== theirs && !/\/dev$/.test(r.deploymentUrl)){
+      notes.push('⚠ this URL is deployment ' + mine.slice(0,10) + '… but the script reports ' + theirs.slice(0,10) + '… — check Deploy → Manage deployments');
+    }
     el.textContent = notes.length
       ? '✓ reachable — ' + notes.join(' · ')
       : '✓ connected — backend v' + r.version + ' — ' + r.sessions + ' saved session(s)';
