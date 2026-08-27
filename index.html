@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Engagement Copilot — front-end v1.9.0
+  Requires Apps Script backend Code.gs v2.0.0 or later (token auth).
+  A v1.x backend will reject nothing and a v2 backend will reject a v1.x
+  page: the token is the breaking change.
+-->
 <title>Engagement Copilot — Quantum Build</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -323,6 +329,11 @@ ul.pain{margin:4px 0 0 16px}
         <div class="hint">Deploy Code.gs as a web app (Execute as: Me · Access: Anyone) and paste the /exec URL here. It handles both AI calls and session storage — the Google Sheet is created automatically on first save.</div>
       </div>
       <div class="field">
+        <label for="cfgToken">Backend API token</label>
+        <input id="cfgToken" type="password" placeholder="From setupBackend() in the Apps Script editor" autocomplete="off" spellcheck="false">
+        <div class="hint">Must match <span class="mono">API_TOKEN</span> in the script’s Script Properties. The backend rejects every request without it.</div>
+      </div>
+      <div class="field">
         <label for="cfgModel">Model (optional override)</label>
         <input id="cfgModel" type="text" placeholder="Leave blank for backend default">
       </div>
@@ -433,7 +444,9 @@ ul.pain{margin:4px 0 0 16px}
 'use strict';
 
 /* ================= Version ================= */
-const APP_VERSION = '1.8.0';   // bump this on every change — shows in the header
+const APP_VERSION = '1.9.0';   // bump this on every change — shows in the header
+/* Targets Code.gs v2.0.0 (see EXPECTS_BACKEND below). Nothing enforces this
+   pairing at deploy time — the page checks at runtime and warns instead. */
 document.getElementById('verTag').textContent = 'v' + APP_VERSION;
 document.title = 'Engagement Copilot v' + APP_VERSION + ' — Quantum Build';
 console.log('Engagement Copilot front-end v' + APP_VERSION);
@@ -454,7 +467,7 @@ const RISK_COLORS = { prohibited:'var(--r-prohibited)', high:'var(--r-high)', li
 const RISK_LABEL = { prohibited:'PROHIBITED', high:'HIGH-RISK', limited:'LIMITED', minimal:'MINIMAL' };
 
 let S = blankSession();
-let cfg = { url: store.get('ec_backend') || '', model: store.get('ec_model') || '' };
+let cfg = { url: store.get('ec_backend') || '', token: store.get('ec_token') || '', model: store.get('ec_model') || '' };
 let view = { x:0, y:0, k:1 };
 let selectedNode = null;
 let busy = false;
@@ -514,14 +527,70 @@ coverage: ${JSON.stringify(S.coverage)}`;
 }
 
 /* ================= Backend calls ================= */
-async function api(body){
+/* Contract with Code.gs v2.0.0:
+   • Content-Type stays text/plain. Apps Script does not answer CORS preflight,
+     and application/json would trigger one — the call would die in the browser
+     before Google ever saw it. Never reach for mode:'no-cors' to dodge that:
+     it hands back an opaque response with no body, and every call here needs
+     to read the reply.
+   • Every request carries the API_TOKEN from the script's Script Properties.
+   • Every response carries "version" — a mismatch means Code.gs was saved but
+     not deployed. */
+const EXPECTS_BACKEND = '2.0.0';
+let backendVersionWarned = false;
+
+async function api(body, timeoutMs){
   if(!cfg.url) throw new Error('Backend URL not set — open Config.');
-  const res = await fetch(cfg.url, {
-    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if(!data.ok) throw new Error(data.error || 'Backend error');
+  if(!cfg.token) throw new Error('Backend token not set — open Config.');
+
+  const ms = timeoutMs || (body.action === 'chat' ? 120000 : 30000);
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), ms);
+
+  let res;
+  try{
+    res = await fetch(cfg.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      redirect:'follow',
+      signal: controller.signal,
+      body: JSON.stringify(Object.assign({}, body, { token: cfg.token }))
+    });
+  }catch(e){
+    clearTimeout(timer);
+    throw new Error(e.name === 'AbortError'
+      ? 'Backend did not respond within ' + Math.round(ms/1000) + 's.'
+      : 'Cannot reach the backend — check the /exec URL and that the deployment is live.');
+  }
+  clearTimeout(timer);
+
+  const raw = await res.text();
+  let data;
+  try{ data = JSON.parse(raw); }
+  catch(e){
+    /* An orphaned deployment answers with an HTML 404 page, not JSON. This is
+       the “worked yesterday, dead today” symptom. */
+    if(res.status === 404) throw new Error('Backend returned 404 — the /exec URL points at a deleted deployment. Re-deploy with Manage deployments → New version.');
+    if(/accounts\.google\.com|ServiceLogin/i.test(raw)) throw new Error('Backend returned a Google sign-in page — the deployment is not set to “Who has access: Anyone”.');
+    throw new Error('Backend returned non-JSON: ' + raw.slice(0,160));
+  }
+
+  if(data.version && data.version !== EXPECTS_BACKEND && !backendVersionWarned){
+    backendVersionWarned = true;
+    console.warn('[Copilot] Backend v' + data.version + ', page expects v' + EXPECTS_BACKEND +
+      '. Saving Code.gs is not deploying it — Deploy → Manage deployments → New version.');
+    toast('Backend is v' + data.version + ' — this page expects v' + EXPECTS_BACKEND);
+  }
+
+  if(!data.ok){
+    const err = new Error(data.error || 'Backend error');
+    err.code = data.code || 'SERVER_ERROR';
+    if(err.code === 'UNAUTHORISED')        err.message = 'Backend rejected the token — check it matches API_TOKEN in Script Properties.';
+    if(err.code === 'NO_TOKEN_CONFIGURED') err.message = 'Backend has no API_TOKEN set — run setupBackend() in the Apps Script editor.';
+    if(err.code === 'RATE_LIMITED')        err.message = 'Hourly AI call limit reached on the backend. ' + (data.error||'');
+    if(err.code === 'BUSY')                err.message = 'Another save is in progress — try again in a moment.';
+    throw err;
+  }
   return data;
 }
 
@@ -846,7 +915,7 @@ function scheduleSave(){
   saveTimer = setTimeout(saveNow, 1800);
 }
 async function saveNow(){
-  if(!S.sessionId || !cfg.url) return;
+  if(!S.sessionId || !cfg.url || !cfg.token) return;
   setSaveState('saving…');
   try{
     await api({ action:'saveSession', sessionId:S.sessionId, clientName:S.clientName,
@@ -1179,14 +1248,16 @@ document.getElementById('sessionsBtn').onclick = showSessions;
 document.getElementById('reportBtn').onclick = openReportModal;
 document.getElementById('configBtn').onclick = ()=>{
   document.getElementById('cfgUrl').value = cfg.url;
+  document.getElementById('cfgToken').value = cfg.token;
   document.getElementById('cfgModel').value = cfg.model;
   document.getElementById('testResult').textContent='';
   openModal('configModal');
 };
 document.getElementById('cfgSave').onclick = ()=>{
   cfg.url = document.getElementById('cfgUrl').value.trim();
+  cfg.token = document.getElementById('cfgToken').value.trim();
   cfg.model = document.getElementById('cfgModel').value.trim();
-  store.set('ec_backend', cfg.url); store.set('ec_model', cfg.model);
+  store.set('ec_backend', cfg.url); store.set('ec_token', cfg.token); store.set('ec_model', cfg.model);
   store.set('ec_voiceName', document.getElementById('cfgVoice').value);
   closeModal('configModal'); toast('Config saved');
 };
@@ -1203,11 +1274,22 @@ document.getElementById('voicePreview').onclick = ()=>{
 document.getElementById('testBackend').onclick = async ()=>{
   const el = document.getElementById('testResult');
   el.textContent = 'testing…';
-  const prev = cfg.url;
-  cfg.url = document.getElementById('cfgUrl').value.trim();
-  try{ const r = await api({action:'ping'}); el.textContent = '✓ connected — backend v' + (r.version||'?') + ' — Sheet ready'; }
+  /* Test what is typed in the boxes, not what was last saved. */
+  const prev = { url: cfg.url, token: cfg.token };
+  cfg.url   = document.getElementById('cfgUrl').value.trim();
+  cfg.token = document.getElementById('cfgToken').value.trim();
+  try{
+    const r = await api({action:'ping'});
+    const notes = [];
+    if(r.apiKey !== 'set') notes.push('⚠ ANTHROPIC_API_KEY missing in Script Properties');
+    if(r.version !== EXPECTS_BACKEND) notes.push('⚠ backend v' + r.version + ', page expects v' + EXPECTS_BACKEND + ' — deploy a new version');
+    if(r.deploymentUrl && r.deploymentUrl.split('/exec')[0] !== cfg.url.split('/exec')[0]) notes.push('⚠ the script reports a different deployment URL — this /exec may be orphaned');
+    el.textContent = notes.length
+      ? '✓ reachable — ' + notes.join(' · ')
+      : '✓ connected — backend v' + r.version + ' — ' + r.sessions + ' saved session(s)';
+  }
   catch(e){ el.textContent = '✗ ' + e.message; }
-  finally{ if(!document.getElementById('cfgUrl').value.trim()) cfg.url = prev; }
+  finally{ cfg.url = prev.url; cfg.token = prev.token; }
 };
 
 /* ================= Speech: dictation + spoken replies ================= */
@@ -1354,7 +1436,7 @@ STARTERS.forEach(s=>{
 
 /* Init */
 renderPhases(); renderMap(); renderPillars();
-if(!cfg.url) setTimeout(()=>{ toast('Set your Apps Script backend URL in Config to begin'); }, 600);
+if(!cfg.url || !cfg.token) setTimeout(()=>{ toast('Set your Apps Script backend URL and API token in Config to begin'); }, 600);
 </script>
 </body>
 </html>
